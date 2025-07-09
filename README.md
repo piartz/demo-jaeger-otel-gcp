@@ -3,13 +3,13 @@ Environment to demo how an OTEL collector can collect data from a Jaeger collect
 
 # Minikube Jaeger → OTEL → GCP Cloud Trace
 
-## 🔧 Prerequisites
+## Prerequisites
 - [ ] GCP Project with Cloud Trace API enabled
 - [ ] Create Service Account with `Cloud Trace Agent` role
 - [ ] Download JSON credentials
 - [ ] Install: `kubectl`, `minikube`, `gcloud`
 
-## 🚀 Setup
+## Setup
 
 ```bash
 minikube start --cpus=2 --memory=4g
@@ -19,7 +19,7 @@ kubectl create secret generic gcp-creds \
 kubectl apply -f otel-collector/
 ```
 
-## 🔍 Test Trace
+## Test Trace
 Send sample traces to Jaeger:
 ```bash
 curl -X POST http://$(minikube service jaeger --url | grep 14268)/api/traces \
@@ -27,5 +27,5 @@ curl -X POST http://$(minikube service jaeger --url | grep 14268)/api/traces \
   -d '{ "traceId": "...", "spans": [...] }'
 ```
 
-## 📊 View in GCP
+## View in GCP
 Visit [Cloud Trace Console](https://console.cloud.google.com/traces/list) to see the traces.
