@@ -1,0 +1,20 @@
+receivers:
+  jaeger:
+    protocols:
+      grpc:
+      thrift_http:
+
+#exporters:
+#  googlecloud:
+#    project: YOUR_GCP_PROJECT_ID
+
+exporters:
+  logging:
+    loglevel: debug  # logs full trace data to stdout
+
+
+service:
+  pipelines:
+    traces:
+      receivers: [jaeger]
+      exporters: [googlecloud]
