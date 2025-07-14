@@ -5,10 +5,23 @@ metadata:
   namespace: default
   labels:
     app: otel-collector
-  
 data:
   otel-collector-config.yaml: |
-    {{ .Files.Get "otel-collector-config.yaml" | indent 4 }}
+    receivers:
+      jaeger:
+        protocols:
+          grpc:
+          thrift_http:
+
+    exporters:
+      debug:
+
+    service:
+      pipelines:
+        traces:
+          receivers: [jaeger]
+          exporters: [debug]
+
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -25,22 +38,22 @@ spec:
         app: otel-collector
     spec:
       containers:
-      - name: otel-collector
-        image: otel/opentelemetry-collector-contrib:latest
-        args: ["--config=/conf/otel-collector-config.yaml"]
-        volumeMounts:
-        - name: config
-          mountPath: /conf
-        env:
-        - name: GOOGLE_APPLICATION_CREDENTIALS
-          value: /conf/creds.json
+        - name: otel-collector
+          image: otel/opentelemetry-collector-contrib:latest
+          args: ["--config=/conf/otel-collector-config.yaml"]
+          volumeMounts:
+            - name: config
+              mountPath: /conf
+          env:
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: /conf/creds.json
       volumes:
-      - name: config
-        configMap:
-          name: otel-collector-conf
-      - name: creds
-        secret:
-          secretName: gcp-creds
+        - name: config
+          configMap:
+            name: otel-collector-conf
+        - name: creds
+          secret:
+            secretName: gcp-creds
 ---
 apiVersion: v1
 kind: Service
