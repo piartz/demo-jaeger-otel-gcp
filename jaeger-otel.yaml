@@ -1,0 +1,160 @@
+# ------------------- Jaeger All-In-One -------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: jaeger
+spec:
+  selector:
+    app: jaeger
+  ports:
+    - name: ui
+      port: 16686
+      targetPort: 16686
+      protocol: TCP
+    - name: agent-udp
+      port: 6831
+      targetPort: 6831
+      protocol: UDP
+    - name: collector
+      port: 14268
+      targetPort: 14268
+      protocol: TCP
+    - name: zipkin
+      port: 9411
+      targetPort: 9411
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jaeger
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jaeger
+  template:
+    metadata:
+      labels:
+        app: jaeger
+    spec:
+      containers:
+        - name: jaeger
+          image: jaegertracing/all-in-one:latest
+          env:
+            - name: COLLECTOR_ZIPKIN_HOST_PORT
+              value: ":9411"
+          ports:
+            - containerPort: 16686 # UI
+              protocol: TCP
+            - containerPort: 14268 # Collector HTTP
+              protocol: TCP
+            - containerPort: 6831  # Agent UDP
+              protocol: UDP
+            - containerPort: 9411  # Zipkin
+              protocol: TCP
+
+# ----------------- OTEL Collector ConfigMap --------------
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-conf
+data:
+  otel-collector-config.yaml: |
+    receivers:
+      jaeger:
+        protocols:
+          thrift_compact:
+          thrift_binary:
+          grpc:
+          thrift_http:
+      otlp:
+        protocols:
+          grpc:
+          http:
+    exporters:
+      zipkin:
+        endpoint: "http://jaeger:9411/api/v2/spans"
+      debug:
+        verbosity: detailed
+      googlecloud:
+        project: playground-martin-1   # <--- CHANGE to your GCP Project ID!
+    service:
+      pipelines:
+        traces:
+          receivers: [jaeger, otlp]
+          exporters: [zipkin, debug, googlecloud]
+
+# ------------------- OTEL Collector Service ---------------
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+spec:
+  selector:
+    app: otel-collector
+  ports:
+    - name: jaeger-agent-udp
+      port: 6831
+      targetPort: 6831
+      protocol: UDP
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+      protocol: TCP
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
+      protocol: TCP
+    - name: jaeger-collector-http
+      port: 14268
+      targetPort: 14268
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: otel-collector
+  template:
+    metadata:
+      labels:
+        app: otel-collector
+    spec:
+      containers:
+        - name: otel-collector
+          image: otel/opentelemetry-collector-contrib:latest
+          env:
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: /creds/creds.json
+          command:
+            - "/otelcol-contrib"
+            - "--config=/conf/otel-collector-config.yaml"
+          volumeMounts:
+            - name: otel-collector-config-vol
+              mountPath: /conf
+            - name: gcp-creds
+              mountPath: /creds
+              readOnly: true
+          ports:
+            - containerPort: 6831
+              protocol: UDP
+            - containerPort: 4317
+              protocol: TCP
+            - containerPort: 4318
+              protocol: TCP
+            - containerPort: 14268
+              protocol: TCP
+      volumes:
+        - name: otel-collector-config-vol
+          configMap:
+            name: otel-collector-conf
+        - name: gcp-creds
+          secret:
+            secretName: gcp-creds

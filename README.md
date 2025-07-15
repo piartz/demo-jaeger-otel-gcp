@@ -1,33 +1,132 @@
-# demo-jaeger-otel-gcp
-Environment to demo how an OTEL collector can collect data from a Jaeger collector and visualize it on GCP
+# Demo: Jaeger & OpenTelemetry Collector on Kubernetes
 
-# Minikube Jaeger → OTEL → GCP Cloud Trace
+This demo shows how to deploy Jaeger and the OpenTelemetry Collector to a local Kubernetes cluster (using minikube).
+You can generate and visualize distributed traces using telemetrygen.
+
+---
 
 ## Prerequisites
-- [ ] GCP Project with Cloud Trace API enabled
-- [ ] Create Service Account with `Cloud Trace Agent` role
-- [ ] Download JSON credentials
-- [ ] Install: `kubectl`, `minikube`, `gcloud`
 
-## Setup
+- Docker
+- kubectl
+- minikube
+- python3, pip (optional, for generating traces from an instrumented app)
+
+---
+
+## Setup (Minikube)
+
+1. Start minikube:
+
+   `minikube start`
+
+2. (Optional) Use minikube's Docker daemon:
+
+   `eval $(minikube docker-env)`
+
+---
+
+## Deploy Jaeger & OTEL Collector
+
+1. Apply the YAML file:
+
+   `kubectl apply -f jaeger-otel.yaml`
+
+2. Wait for all pods to be running:
+
+   `kubectl get pods`
+
+   Example output:
+   ```
+     NAME                              READY   STATUS    RESTARTS   AGE
+     jaeger-xxxxxxxxx-xxxxx            1/1     Running   0          1m
+     otel-collector-xxxxxxxxx-xxxxx    1/1     Running   0          1m
+    ```
+---
+
+## Generate Test Traces
+
+### gRPC
+You can use telemetrygen to generate gRPC traces and send them to the OTEL collector.
+
+Port-forward OTEL collector and use localhost:
+
+  `kubectl port-forward svc/otel-collector 4317:4317`
+
+  In a separate terminal:
 ```bash
-minikube start --driver=docker
-kubectl config use-context minikube
-kubectl apply -f jaeger/jaeger.yaml
-kubectl create secret generic gcp-creds \
-  --from-file=creds.json=gcp/YOUR_SERVICE_ACCOUNT.json
-kubectl apply -f otel-collector/
+  docker run --rm -it ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest \
+    traces \
+    --otlp-endpoint host.docker.internal:4317 \
+    --otlp-insecure \
+    --duration 10s
 ```
 
-## Test Trace
-Send sample traces to Jaeger:
+### HTTP
+
+If we want to generate traffic on 14268 (HTTP, Jaeger Thrift over TCP) we can instrument an app with the `opentelemetry` SDK. `jaeger_client` has been deprecated since 2022, and Jaeger urges its users to replace exporters in favor of native OTEL. 
+
+We have a python example in `jaeger-client-trace.py`. We will still be using a Jaeger Exporter, within the OTEL SDK, as a way to emulate Jaeger-formatted traffic within the OTEL collector.
+
+Setting up a venv is the easiest way to bootstrap this app:
 ```bash
-kubectl port-forward svc/jaeger 16686:16686 # Forward Jaeger UI port
+python3 -m venv ~/venvs/jaeger-demo && source ~/venvs/jaeger-demo/bin/activate
+pip install opentelemetry-exporter-jaeger-thrift deprecated
 ```
-Open `http://127.0.0.1:16686`
-From the Jaeger UI, upload `trace-demo.json` to Jaeger.
+Port forward in Kubernetes:
+`kubectl port-forward svc/otel-collector 14268:14268`
 
-To prove OTEL is collecting this data
+After the setup, just run it as usual
+`python jaeger-client-trace.py`
 
-## View in GCP
-Visit [Cloud Trace Console](https://console.cloud.google.com/traces/list) to see the traces.
+### UDP
+
+Since this demo is based on `minikube`, exposing UDP ports via `kubectl port-forward` is not possible. Nonetheless, you can experiment within your cluster with a Jaeger agent and UDP traffic.
+
+---
+
+## View Traces in Jaeger UI
+
+The current configuration exports all traces in Zipkin format to a Jaeger collector (port 9411), and then visualized via Jaeger UI.
+
+1. Port-forward the Jaeger UI:
+
+   `kubectl port-forward svc/jaeger 16686:16686`
+
+2. Open your browser to:
+
+   `http://localhost:16686`
+
+3. Search for traces:
+   In the Jaeger UI, select a service (e.g. "telemetrygen-server" or "otel-demo") and click "Find Traces".
+
+---
+
+## Sending it to GCP Trace
+
+The current `jaeger-otel.yaml` file includes a exporter to Google Cloud. Remember to change the project ID in the googlecloud.project parameter of the Collector's config file.
+
+To configure it, you must create a Service Account for the Trace role. Go to the GCP Console -> IAM & Admin -> Service Accounts -> Create a service account. You must give the Service account the Trace Agent role. 
+
+After creating the service account, click on it, go to the three dots and select "Manage keys". You can then create a key file in .json format. Save this somewhere safe, and rename it to `creds.json`. 
+
+Push it to the kubernetes cluster with
+`kubectl create secret generic gcp-creds --from-file=creds.json`
+
+---
+
+## Troubleshooting
+
+- No traces in Jaeger UI?
+  - Ensure both Jaeger and OTEL collector pods are running.
+  - Check OTEL collector logs:
+      `kubectl logs deployment/otel-collector`
+  - Check Jaeger logs:
+      `kubectl logs deployment/jaeger`
+  - Double-check the endpoint and port you’re sending traces to.
+  - If using Docker on Mac/Windows, use host.docker.internal in telemetrygen.
+
+- Port-forwarding fails or is disconnected?
+  - Restart the port-forward command.
+  - Pods must be running (not restarting or pending).
+
