@@ -78,11 +78,13 @@ data:
         endpoint: "http://jaeger:9411/api/v2/spans"
       debug:
         verbosity: detailed
+      googlecloud:
+        project: playground-martin-1   # <--- CHANGE to your GCP Project ID!
     service:
       pipelines:
         traces:
           receivers: [jaeger, otlp]
-          exporters: [zipkin, debug]
+          exporters: [zipkin, debug, googlecloud]
 
 # ------------------- OTEL Collector Service ---------------
 ---
@@ -128,12 +130,18 @@ spec:
       containers:
         - name: otel-collector
           image: otel/opentelemetry-collector-contrib:latest
+          env:
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: /creds/creds.json
           command:
             - "/otelcol-contrib"
             - "--config=/conf/otel-collector-config.yaml"
           volumeMounts:
             - name: otel-collector-config-vol
               mountPath: /conf
+            - name: gcp-creds
+              mountPath: /creds
+              readOnly: true
           ports:
             - containerPort: 6831
               protocol: UDP
@@ -147,3 +155,6 @@ spec:
         - name: otel-collector-config-vol
           configMap:
             name: otel-collector-conf
+        - name: gcp-creds
+          secret:
+            secretName: gcp-creds

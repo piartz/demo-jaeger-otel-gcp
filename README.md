@@ -102,6 +102,19 @@ The current configuration exports all traces in Zipkin format to a Jaeger collec
 
 ---
 
+## Sending it to GCP Trace
+
+The current `jaeger-otel.yaml` file includes a exporter to Google Cloud. Remember to change the project ID in the googlecloud.project parameter of the Collector's config file.
+
+To configure it, you must create a Service Account for the Trace role. Go to the GCP Console -> IAM & Admin -> Service Accounts -> Create a service account. You must give the Service account the Trace Agent role. 
+
+After creating the service account, click on it, go to the three dots and select "Manage keys". You can then create a key file in .json format. Save this somewhere safe, and rename it to `creds.json`. 
+
+Push it to the kubernetes cluster with
+`kubectl create secret generic gcp-creds --from-file=creds.json`
+
+---
+
 ## Troubleshooting
 
 - No traces in Jaeger UI?
